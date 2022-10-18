@@ -3,7 +3,13 @@ import os
 import glob
 import pickle
 import random
+import argparse
 
+
+# This corresponds to the WFC color example in Chapter 5
+# You can change this example, or the arguments set at
+# the bottom of the file for this domain to play with
+# how the domain is modeled (e.g., size of the patterns)
 def load_colors_domain():
 	examples = [[
 		['W', 'W', 'W', 'W'],
@@ -162,6 +168,14 @@ def compute_adjacency_for_pattern_pair(p_1, p_2, row_offset, col_offset):
 
 # helper function for the 'compute_adjacency_for_pattern_pair' which gets the
 # sections of the provided pattern which are used to determine overlap/adjacency
+# This essentially, gets the partial pieces of a given pattern to be used
+# for determining which patterns can overlap in which ways
+# e.g., we get the top portion of the pattern (as determined by the offsets)
+# and then we can check for other patterns  if the top of pattern A is the same
+# as the bottom of pattern B. Which tells us which patterns can be placed next
+# to each other.
+# This function just computes the partial pattern chunks, and the function
+# above does the computing of which adjacencies are allowed
 def get_pattern_slices(pattern, row_offset, col_offset):
 	height = len(pattern)
 	width = len(pattern[0])
@@ -173,6 +187,7 @@ def get_pattern_slices(pattern, row_offset, col_offset):
 										for r in range(height)] 
 															for i in range(2))
 
+	
 	for row_index in range(height):
 		for col_index in range(width):
 			if row_index < height - row_offset:
@@ -182,7 +197,7 @@ def get_pattern_slices(pattern, row_offset, col_offset):
 				p_bottom[row_index-row_offset][col_index] = \
 												pattern[row_index][col_index]
 
-			if col_index < width - col_index:
+			if col_index < width - col_offset:
 				p_left[row_index][col_index] = pattern[row_index][col_index]
 
 			if col_index >= col_offset:
@@ -194,45 +209,115 @@ def get_pattern_slices(pattern, row_offset, col_offset):
 
 if __name__ == '__main__':
 
-	
-	# domain = "SMB"
-	domain = "LR"
-	# domain = "colors"
 
+	parser = argparse.ArgumentParser(
+						description='Parameters for training the WFC model.')
+	parser.add_argument('--domain',
+						type=str, 
+						default="colors",
+	                    help='A string indicating which domain to use for ' +
+	                    	'training. Possible values = ["colors", "LR","SMB"]. ' +
+	                    	'Defaults to "colors"')
+	parser.add_argument('--wrapping', 
+						action='store_true',
+						dest="wrapping",
+						default=None,
+	                    help='A flag indicating if the examples should be ' +
+	                    	'assumed to wrap around  when training the model. ' +
+	                    	'defaults set based on domain if this is not set ' +
+	                    	'and the "not-wrapping" flag is not set.')
+	parser.add_argument('--not_wrapping', 
+						action='store_false',
+						dest="wrapping",
+						default=None,
+	                    help='A flag indicating if the examples should be ' +
+	                    	'assumed to wrap around  when training the model. ' +
+	                    	'defaults set based on domain if this is not set ' +
+	                    	'and the "wrapping" flag is not set.')
+	parser.add_argument('--pattern_width', 
+						type=int,
+						help='An integer indicating the width of the ' +
+							'pattern used by the WFC algorithm. Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--pattern_height', 
+						type=int,
+						help='An integer indicating the height of the ' +
+							'pattern used by the WFC algorithm. Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--row_offset', 
+						type=int,
+						help='An integer indicating the row offset used '+
+							'by the WFC algorithm between patterns. Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--col_offset', 
+						type=int,
+						help='An integer indicating the column offset of the ' +
+							'by the WFC algorithm between patterns. Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--num_examples', 
+						type=int,
+						help='An integer indicating the how many examples to '+
+							'load for the given domain. Ignored in the "colors" '+
+							'domain. Default values used for other domains if '+
+							'not passed. Note that only 1-2 levels are used by '+
+							'default, because the time to train and generate '+
+							'increases a lot based on example size.')
+
+	parser.add_argument('--model_name',
+						type=str, 
+	                    help='A string indicating what name to give the trained '+ 
+	                    	'model. e.g., "super_cool_WFC_model". Note that the '+ 
+	                    	'file extension will be added automatically. Also ' +
+	                    	'if none is provided will default to '+
+	                    	'"trained_WFC_<domain>"')
+
+
+
+	args = vars(parser.parse_args())
+
+	# Remove None values from dictionary to ease checking later
+	args = {key:value for key,value in args.items() if value is not None}
+
+
+	domain = args["domain"]
+	model_name = args.get("model_name", f"trained_WFC_{domain}")
 
 	if domain == "SMB":
-		wrapping = False
-		pattern_height = 3
-		pattern_width = 3
-		row_offset = 1
-		col_offset = 1
+		wrapping = args.get("wrapping", False)
+		pattern_height = args.get("pattern_height", 3)
+		pattern_width = args.get("pattern_width", 3)
+		row_offset = args.get("row_offset", 1)
+		col_offset = args.get("col_offset", 1)
+		num_examples = args.get("num_examples", 2)
 		paths = ["./SMB1_Data/Processed/*.txt",
 				"./SMB2_Data/Processed/*.txt"]
-
-		examples = load_examples(paths, subset=2)
+		
+		examples = load_examples(paths, subset=num_examples)
 
 	elif domain == "LR":
-		wrapping = True
-		pattern_height = 2
-		pattern_width = 2
-		row_offset = 1
-		col_offset = 1
+		wrapping = args.get("wrapping", True)
+		pattern_height = args.get("pattern_height", 2)
+		pattern_width = args.get("pattern_width", 2)
+		row_offset = args.get("row_offset", 1)
+		col_offset = args.get("col_offset", 1)
+		num_examples = args.get("num_examples", 2)
 		paths = ["./LR_Data/Processed/*.txt"]
 
-		examples = load_examples(paths, subset=2)
+		examples = load_examples(paths, subset=num_examples)
 
 	elif domain == "colors":
-		wrapping = True
-		pattern_height = 2
-		pattern_width = 2
-		row_offset = 1
-		col_offset = 1
-
+		wrapping = args.get("wrapping", True)
+		pattern_height = args.get("pattern_height", 2)
+		pattern_width = args.get("pattern_width", 2)
+		row_offset = args.get("row_offset", 1)
+		col_offset = args.get("col_offset", 1)
+		
 		examples = load_colors_domain()
 
-	
-
-	
+	else:
+		print(f"'domain' must take a value from ['colors', 'LR', 'SMB'], "+
+			"but {domain} was given.")
+		exit()
 
 	all_patterns = extract_patterns(examples, pattern_height, pattern_width, 
 									row_offset=row_offset, col_offset=col_offset, 
@@ -256,4 +341,4 @@ if __name__ == '__main__':
 					"pattern_counts": pattern_occurrences
 					}
 
-	pickle.dump(trained_WFC_model, open(f"trained_WFC_{domain}.pickle", "wb"))
+	pickle.dump(trained_WFC_model, open(f"{model_name}.pickle", "wb"))
