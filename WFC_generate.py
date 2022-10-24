@@ -5,11 +5,13 @@ import sys
 import os
 import glob
 import pickle
+import argparse
+
+from PIL import Image
 from sty import fg, bg, ef, rs, Style, RgbFg
 
 def generate_new_level(height, width, model, wrapping=False, max_attempts = 5):
 	
-	# pattern_occurrences = {key:1 for key in model["pattern_counts"].keys()}
 	pattern_occurrences = model["pattern_counts"]
 	possible_patterns = list(pattern_occurrences.keys())
 	allowed_adjacencies = model["allowed_adjacencies"]
@@ -150,11 +152,9 @@ def propagate(level, patterns, allowed_adjacencies, pattern_occurrences, wrappin
 		still_updating = False
 
 		#get all positions sorted by entropy
-
 		positions = [(r,c) for r in range(len(level)) 
 										for c in range(len(level[0]))]
 
-		# print("Computing entropy")
 		sorted_positions = []
 		for pos in positions:
 			entropy = compute_shannon_entropy(level[pos[0]][pos[1]],
@@ -173,9 +173,7 @@ def propagate(level, patterns, allowed_adjacencies, pattern_occurrences, wrappin
 					sorted_positions.append((pos,entropy))
 
 
-		# print("Determining allowed adjs:")
 		for pos,_ in sorted_positions:
-			# print("\tiniting")
 			r = pos[0]
 			c = pos[1]
 
@@ -214,38 +212,17 @@ def propagate(level, patterns, allowed_adjacencies, pattern_occurrences, wrappin
 			# if not wrapping, assume anything can be placed out of bounds
 			elif not wrapping and c >= len(level[0]):
 				current_allowed_right = {pattern_to_tuple(pat) for pat in patterns}
-
-			# print("\tGetting updated allowed Adjs for the current pos")
 			
 			allowed_above = {pattern_to_tuple(pat_above) for pat_curr in level[r][c] for pat_above in allowed_adjacencies[pattern_to_tuple(pat_curr)]["above"]}
 			allowed_below = {pattern_to_tuple(pat_below) for pat_curr in level[r][c] for pat_below in allowed_adjacencies[pattern_to_tuple(pat_curr)]["below"]}
 			allowed_left = {pattern_to_tuple(pat_left) for pat_curr in level[r][c] for pat_left in allowed_adjacencies[pattern_to_tuple(pat_curr)]["left"]}
 			allowed_right = {pattern_to_tuple(pat_right) for pat_curr in level[r][c] for pat_right in allowed_adjacencies[pattern_to_tuple(pat_curr)]["right"]}
 
-
-			# for pat_curr in level[r][c]:
-			# 	for pat_above in allowed_adjacencies[pattern_to_tuple(pat_curr)]["above"]:
-			# 		if pattern_to_tuple(pat_above) not in allowed_above:
-			# 			allowed_above.append(pattern_to_tuple(pat_above))
-
-			# 	for pat_below in allowed_adjacencies[pattern_to_tuple(pat_curr)]["below"]:
-			# 		if pat_below not in allowed_below:
-			# 			allowed_below.append(pat_below)
-
-			# 	for pat_left in allowed_adjacencies[pattern_to_tuple(pat_curr)]["left"]:
-			# 		if pat_left not in allowed_left:
-			# 			allowed_left.append(pat_left)
-
-			# 	for pat_right in allowed_adjacencies[pattern_to_tuple(pat_curr)]["right"]:
-			# 		if pat_right not in allowed_right:
-			# 			allowed_right.append(pat_right)
-
-			# print("\tUpdating")
 			if wrapping:
-				level[(r-1)%len(level)][c] = list(allowed_above.intersection(current_allowed_above))#[pat for pat in allowed_above if pat in current_allowed_above]
-				level[(r+1)%len(level)][c] = list(allowed_below.intersection(current_allowed_below))#[pat for pat in allowed_below if pat in current_allowed_below]
-				level[r][(c-1)%len(level[r])] = list(allowed_left.intersection(current_allowed_left))#[pat for pat in allowed_left if pat in current_allowed_left]
-				level[r][(c+1)%len(level[r])] = list(allowed_right.intersection(current_allowed_right))#[pat for pat in allowed_right if pat in current_allowed_right]
+				level[(r-1)%len(level)][c] = list(allowed_above.intersection(current_allowed_above))
+				level[(r+1)%len(level)][c] = list(allowed_below.intersection(current_allowed_below))
+				level[r][(c-1)%len(level[r])] = list(allowed_left.intersection(current_allowed_left))
+				level[r][(c+1)%len(level[r])] = list(allowed_right.intersection(current_allowed_right))
 
 				if len(level[(r-1)%len(level)][c]) < len(current_allowed_above) or \
 					len(level[(r+1)%len(level)][c]) < len(current_allowed_below) or \
@@ -254,19 +231,19 @@ def propagate(level, patterns, allowed_adjacencies, pattern_occurrences, wrappin
 					still_updating = True
 			else:
 				if r > 0:
-					level[r-1][c] = list(allowed_above.intersection(current_allowed_above))#[pat for pat in allowed_above if pat in current_allowed_above]
+					level[r-1][c] = list(allowed_above.intersection(current_allowed_above))
 					if len(level[r-1][c]) < len(current_allowed_above):
 						still_updating = True
 				if r < len(level)-1:
-					level[r+1][c] = list(allowed_below.intersection(current_allowed_below))#[pat for pat in allowed_below if pat in current_allowed_below]
+					level[r+1][c] = list(allowed_below.intersection(current_allowed_below))
 					if len(level[r+1][c]) < len(current_allowed_below):
 						still_updating = True
 				if c > 0:
-					level[r][c-1] = list(allowed_left.intersection(current_allowed_left))#[pat for pat in allowed_left if pat in current_allowed_left]
+					level[r][c-1] = list(allowed_left.intersection(current_allowed_left))
 					if len(level[r][c-1]) < len(current_allowed_left):
 						still_updating = True
 				if c < len(level[0])-1:
-					level[r][c+1] = list(allowed_right.intersection(current_allowed_right))#[pat for pat in allowed_right if pat in current_allowed_right]
+					level[r][c+1] = list(allowed_right.intersection(current_allowed_right))
 					if len(level[r][c+1]) < len(current_allowed_right):
 						still_updating = True
 		
@@ -351,37 +328,190 @@ def print_level_in_progress(level, domain):
 
 	return level_in_progress
 
+# Visualize a Generated Level
+def visualize_level(level, sprite_mapping, sprites, background_color, level_name, level_number, domain):
+	
+	level_height = len(level)
+	level_width = len(level[0])
+
+	# sprites are max 18x18 pixels
+	viz_height =  18*level_height
+	viz_width =  18*level_width
+
+	# this creates the image for the level
+	image = Image.new("RGB", (viz_width, viz_height), color=background_color)
+	pixels = image.load()#this loads the level image's pixels so we can edit them
+
+
+	for y in range(0, level_height):
+		for x in range(0, level_width):
+			imageToUse = None
+			if level[y][x] in sprite_mapping.keys():
+				imageToUse = sprites[sprite_mapping[level[y][x]]]
+			
+			# Special handling to make SMB levels look nicer
+			elif level[y][x]=="X" and domain == "SMB":
+				#Rules about ensuring the right sprite is used
+				if y==level_height-2:
+					imageToUse = sprites["groundTop"]
+				elif y==level_height-1:
+					#Check if we have a solid tile above or not
+					if level[y-1][x]=="X":
+						imageToUse = sprites["groundBottom"]
+					else:
+						imageToUse = sprites["groundTop"]
+				else:
+					imageToUse = sprites["stair"]
+			
+			if not imageToUse == None:
+				pixelsToUse = imageToUse.load()
+				for x2 in range(0, 18):
+					for y2 in range(0, 18):
+						if pixelsToUse[x2,y2][3]>0:
+							pixels[x*18+x2,y*18+y2] = pixelsToUse[x2,y2][0:-1]
+
+	image.save(f'Output/{level_name}_{level_number}_viz.jpeg', "JPEG")
 
 if __name__ == '__main__':
-	# domain = "SMB"
-	domain = "LR"
-	# domain = "colors"
+
+
+	parser = argparse.ArgumentParser(
+						description='Parameters for training the WFC model.')
+	parser.add_argument('--domain',
+						type=str, 
+						default="colors",
+	                    help='A string indicating which domain to use for ' +
+	                    	'training. Possible values = ["colors", "LR","SMB"]. ' +
+	                    	'Defaults to "colors"')
+	parser.add_argument('--model_name',
+						type=str, 
+	                    help='A string indicating the name of the trained model '+ 
+	                    	'to load. e.g., "super_cool_WFC_model". Note that the '+ 
+	                    	'file extension will be added automatically. Also ' +
+	                    	'if none is provided will default to '+
+	                    	'"trained_WFC_<domain>"')
+	parser.add_argument('--wrapping', 
+						action='store_true',
+						dest="wrapping",
+						default=None,
+	                    help='A flag indicating if the examples should be ' +
+	                    	'assumed to wrap around  when training the model. ' +
+	                    	'defaults set based on domain if this is not set ' +
+	                    	'and the "not-wrapping" flag is not set.')
+	parser.add_argument('--not_wrapping', 
+						action='store_false',
+						dest="wrapping",
+						default=None,
+	                    help='A flag indicating if the examples should be ' +
+	                    	'assumed to wrap around  when training the model. ' +
+	                    	'defaults set based on domain if this is not set ' +
+	                    	'and the "wrapping" flag is not set.')
+	parser.add_argument('--level_height', 
+						type=int,
+						help='An integer indicating the height of the ' +
+							'level to be generated Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--level_width', 
+						type=int,
+						help='An integer indicating the width of the ' +
+							'level to be generated Defaults ' +
+							'are set based on domain if not passed.')
+	parser.add_argument('--num_levels', 
+						type=int,
+						default=1,
+						help='An integer indicating the how many levels to '+
+							'generate. Defaults to 1 if not passsed.')
+	parser.add_argument('--level_name',
+						type=str, 
+	                    help='A string indicating the name to give the '+ 
+	                    	'generated levels. e.g., "super_cool_level". Note ' +
+	                    	'that the file extension and level number will be ' +
+	                    	'added automatically. Also if none is provided will ' +
+	                    	'default to "generated"')
+
+	args = vars(parser.parse_args())
+
+	# Remove None values from dictionary to ease checking later
+	args = {key:value for key,value in args.items() if value is not None}
+
+	domain = args["domain"]
+	model_name = args.get("model_name", f"trained_WFC_{domain}")
+	num_levels = args.get("num_levels", 1)
+	level_name = args.get("level_name", f"generated")
 
 	if domain == "SMB":
-		wrapping = False
-		level_height = 14
-		level_width = 16
-		
+		wrapping = args.get("wrapping", False)
+		level_height = args.get("level_height", 14)
+		level_width = args.get("level_width", 16)
+		sprite_mapping = {
+				"S": "brick",
+				"?": "exclamationBox",
+				"Q": "exclamationBoxEmpty",
+				"E": "enemy",
+				"<": "bushTopLeft",
+				">": "bushTopRight",
+				"[": "bushLeft",
+				"]": "bushRight",
+				"o": "coin",
+				"B": "arrowTop",
+				"b": "arrowBottom"
+			}
+		background_color = (223, 245, 244)
+
 
 	elif domain == "LR":
-		wrapping = True
-		level_height = 16
-		level_width = 16
+		wrapping = args.get("wrapping", True)
+		level_height = args.get("level_height", 16)
+		level_width = args.get("level_width", 16)
+		sprite_mapping = {
+				"B": "solid",
+				"b": "diggable",
+				"-": "branch",
+				"#": "ladder",
+				"E": "enemy",
+				"M": "player",
+				"G": "gem"
+			}
+		background_color = (223, 245, 244)
 
 	elif domain == "colors":
-		wrapping = True
-		level_height = 20
-		level_width = 20
+		wrapping = args.get("wrapping", True)
+		level_height = args.get("level_height", 20)
+		level_width = args.get("level_width", 20)
+		sprite_mapping = {
+				"B": "black",
+				"R": "red",
+				"W": "white"
+			}
+		background_color = (123, 123, 123)
 
-	trained_model = pickle.load(open(f"trained_WFC_{domain}.pickle", "rb"))
+	else:
+		print("'domain' must take a value from ['colors', 'LR', 'SMB'], "+
+			f"but {domain} was given.")
+		exit()
 
-	level = generate_new_level(level_height, level_width, trained_model, 
-											wrapping=wrapping, max_attempts=5)
+	trained_model = pickle.load(open(f"{model_name}.pickle", "rb"))
+	if trained_model["domain"] != domain:
+		print("trained model's domain must match the target domain")
+		print(f"trained model: {trained_model['domain']}, target: {domain}")
+		exit()
 
-	print_level_in_progress(level, trained_model["domain"])
+	#Load sprites
+	sprites = {}
+	for filename in glob.glob(f"./Sprites/{domain}/*.png"):
+		im = Image.open(filename)
+		name = filename.split("/")[-1].split(".")[0]
+		sprites[name] = im.convert('RGBA')
 
-	with open('output/generated.txt', 'w') as output:
-		for row in level:
-			for cell in row:
-				output.write(cell)
-			output.write('\n')
+	for level_number in range(num_levels):
+		level = generate_new_level(level_height, level_width, trained_model, 
+												wrapping=wrapping, max_attempts=5)
+
+		print_level_in_progress(level, trained_model["domain"])
+
+		with open(f'Output/{level_name}_{level_number}.txt', 'w') as output:
+			for row in level:
+				for cell in row:
+					output.write(cell)
+				output.write('\n')
+		visualize_level(level, sprite_mapping, sprites, background_color, level_name, level_number, domain)
